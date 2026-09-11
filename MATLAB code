@@ -1,0 +1,76 @@
+%% Echo Cancellation using PID Controlled LMS in MATLAB
+clear; clc; close all;
+
+%% Input Signal
+fs = 8000;
+t = 0:1/fs:1;
+x = sin(2*pi*200*t);
+
+%% Echo Path
+h = [0.8 0.5 0.3 0.1];
+echo = filter(h,1,x);
+
+%% Microphone Signal
+noise = 0.01*randn(size(x));
+d = echo + noise;
+
+%% LMS Filter with PID Control
+N = 32;
+w = zeros(N,1);
+mu = 0.01;
+y = zeros(size(x));
+e = zeros(size(x));
+mu_hist = zeros(size(x));
+
+Kp = 0.001;
+Ki = 0.00001;
+Kd = 0.0001;
+
+integralTerm = 0;
+prevErrPower = 0;
+
+for n = N:length(x)
+    Xn = x(n:-1:n-N+1).';
+    y(n) = w'*Xn;
+    e(n) = d(n) - y(n);
+
+    errPower = e(n)^2 / (Xn'*Xn + 1e-8);
+
+    derivative = errPower - prevErrPower;
+    integralTerm = integralTerm + errPower;
+    mu = mu + Kp*errPower + Ki*integralTerm + Kd*derivative;
+
+    mu = max(min(mu,0.1),0.0001);
+    mu_hist(n) = mu;
+
+    w = w + mu*e(n)*Xn;
+    prevErrPower = errPower;
+end
+
+%% ERLE
+numAvg = 200;
+Pd = filter(ones(numAvg,1)/numAvg,1,d.^2);
+Pe = filter(ones(numAvg,1)/numAvg,1,e.^2);
+ERLE = 10*log10(Pd./Pe);
+
+%% Results
+figure;
+
+subplot(3,1,1);
+plot(t,d,'r',t,e,'b'); grid on;
+xlabel('Time (s)');
+ylabel('Amplitude');
+legend('Microphone (d)','Residual Error (e)');
+title('Echo Cancellation');
+
+subplot(3,1,2);
+plot(t,mu_hist); grid on;
+xlabel('Time (s)');
+ylabel('Step size (\mu)');
+title('PID Controlled Step Size');
+
+subplot(3,1,3);
+plot(t,ERLE); grid on;
+xlabel('Time (s)');
+ylabel('ERLE (dB)');
+title('Echo Return Loss Enhancement');
